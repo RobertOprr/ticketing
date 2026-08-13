@@ -1,0 +1,46 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploys the Django API and the React static build as two services.
+# MySQL isn't a Render-managed database type, so DB_* vars point at
+# whatever external MySQL host you provision (Aiven, Railway, etc.) —
+# fill them in via the Render dashboard after the first deploy.
+services:
+  - name: helpdesk-backend
+    type: web
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    startCommand: "gunicorn helpdesk_backend.wsgi:application"
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: helpdesk-backend.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://helpdesk-frontend.onrender.com
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+
+  - name: helpdesk-frontend
+    type: web
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://helpdesk-backend.onrender.com/api
+    routes:
+      - source: "/*"
+        destination: /index.html

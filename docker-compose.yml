@@ -1,0 +1,15 @@
+services:
+  db:
+    image: mysql:8
+    container_name: helpdesk-db
+    environment:
+      MYSQL_DATABASE: helpdesk
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_USER: helpdesk
+      MYSQL_PASSWORD: helpdesk
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+volumes:
+  db_data:
