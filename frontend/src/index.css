@@ -169,6 +169,11 @@ button:disabled {
   color: #b91c1c;
 }
 
+.hint-text {
+  font-size: 0.8rem;
+  color: #777;
+}
+
 .badge {
   display: inline-block;
   padding: 0.15rem 0.6rem;

@@ -6,11 +6,11 @@ from rest_framework import generics
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.serializers import AuthTokenSerializer
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Category, Ticket
+from .models import Category, Ticket, User
 from .serializers import (
     CategorySerializer,
     CommentSerializer,
@@ -109,8 +109,23 @@ class TicketListCreateView(generics.ListCreateAPIView):
         return qs.order_by(order_field)
 
 
+class CanChangeEscalatedStatus(BasePermission):
+    """Once a ticket is Escalated, only an L2 agent can move it to a
+    different status — agents can still view/comment, but resolving an
+    escalation is an L2 call."""
+
+    def has_object_permission(self, request, view, obj):
+        if request.method not in ('PATCH', 'PUT'):
+            return True
+        changing_status = 'status' in request.data and request.data['status'] != obj.status
+        if obj.status == Ticket.Status.ESCALATED and changing_status:
+            return request.user.role == User.Role.L2
+        return True
+
+
 class TicketDetailView(generics.RetrieveUpdateAPIView):
     queryset = Ticket.objects.select_related('category', 'assigned_to').prefetch_related('comments')
+    permission_classes = [IsAuthenticated, CanChangeEscalatedStatus]
 
     def get_serializer_class(self):
         return TicketDetailSerializer if self.request.method == 'GET' else TicketSerializer

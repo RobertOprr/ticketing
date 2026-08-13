@@ -13,6 +13,14 @@ def agent(db):
 
 
 @pytest.fixture
+def l2_agent(db):
+    return User.objects.create_user(
+        username='l2agent', password='pass12345', email='l2agent@example.com',
+        name='L2 Agent', role=User.Role.L2,
+    )
+
+
+@pytest.fixture
 def category(db):
     return Category.objects.create(name='Hardware')
 
@@ -25,6 +33,14 @@ def api_client():
 @pytest.fixture
 def auth_client(agent):
     token, _ = Token.objects.get_or_create(user=agent)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+    return client
+
+
+@pytest.fixture
+def l2_client(l2_agent):
+    token, _ = Token.objects.get_or_create(user=l2_agent)
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
     return client

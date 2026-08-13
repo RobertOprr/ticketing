@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import PriorityBadge from '../components/PriorityBadge'
 import { formatDuration, hoursOpen, isOverdue } from '../lib/sla'
@@ -8,6 +8,8 @@ const STATUSES = ['Open', 'In Progress', 'Resolved', 'Escalated']
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
 export default function TicketListPage() {
+  const [searchParams] = useSearchParams()
+
   const [tickets, setTickets] = useState([])
   const [count, setCount] = useState(0)
   const [hasNext, setHasNext] = useState(false)
@@ -15,7 +17,7 @@ export default function TicketListPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState(searchParams.get('status') || '')
   const [priority, setPriority] = useState('')
   const [category, setCategory] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -28,6 +30,13 @@ export default function TicketListPage() {
   useEffect(() => {
     api.get('/categories').then(setCategories).catch(() => {})
   }, [])
+
+  // Re-sync when the URL's ?status= changes (e.g. clicking the L2 nav's
+  // "Escalated Queue" link while already on this page).
+  useEffect(() => {
+    setStatus(searchParams.get('status') || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Debounce the search box so we don't fire a request on every keystroke.
   useEffect(() => {

@@ -61,6 +61,8 @@ export default function TicketDetailPage() {
   if (error) return <p className="error-text">{error}</p>
   if (!ticket) return <p>Loading...</p>
 
+  const canChangeStatus = ticket.status !== 'Escalated' || user.role === 'l2'
+
   return (
     <div>
       <h1>
@@ -84,13 +86,20 @@ export default function TicketDetailPage() {
         <div className="ticket-actions">
           <label>
             Status
-            <select value={ticket.status} onChange={(e) => updateTicket({ status: e.target.value })}>
+            <select
+              value={ticket.status}
+              disabled={!canChangeStatus}
+              onChange={(e) => updateTicket({ status: e.target.value })}
+            >
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
               ))}
             </select>
+            {!canChangeStatus && (
+              <span className="hint-text">Only L2 can change an escalated ticket's status.</span>
+            )}
           </label>
 
           <label>

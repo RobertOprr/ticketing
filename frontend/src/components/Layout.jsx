@@ -11,6 +11,7 @@ export default function Layout() {
           <Link to="/">Dashboard</Link>
           <Link to="/tickets">Tickets</Link>
           <Link to="/tickets/new">New Ticket</Link>
+          {user?.role === 'l2' && <Link to="/tickets?status=Escalated">Escalated Queue</Link>}
         </nav>
         <div className="navbar-user">
           <span>{user?.name}</span>

@@ -120,6 +120,29 @@ def test_escalate_sets_status_escalated(auth_client, category):
 
 
 @pytest.mark.django_db
+def test_agent_cannot_change_status_of_escalated_ticket(auth_client, category):
+    created = create_ticket(auth_client, category)
+    auth_client.post(f'/api/tickets/{created["id"]}/escalate')
+
+    res = auth_client.patch(f'/api/tickets/{created["id"]}', {'status': 'Resolved'}, format='json')
+    assert res.status_code == 403
+
+    # Non-status fields (e.g. priority) are still fine for an agent to edit.
+    res = auth_client.patch(f'/api/tickets/{created["id"]}', {'priority': 'Urgent'}, format='json')
+    assert res.status_code == 200
+
+
+@pytest.mark.django_db
+def test_l2_can_change_status_of_escalated_ticket(auth_client, l2_client, category):
+    created = create_ticket(auth_client, category)
+    auth_client.post(f'/api/tickets/{created["id"]}/escalate')
+
+    res = l2_client.patch(f'/api/tickets/{created["id"]}', {'status': 'Resolved'}, format='json')
+    assert res.status_code == 200
+    assert res.data['status'] == 'Resolved'
+
+
+@pytest.mark.django_db
 def test_add_comment_ignores_client_supplied_ticket_and_author(auth_client, category, agent):
     created = create_ticket(auth_client, category)
     other_ticket = create_ticket(auth_client, category, title='Second ticket')
