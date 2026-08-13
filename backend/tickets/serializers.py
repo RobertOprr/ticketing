@@ -32,12 +32,23 @@ class TicketSerializer(serializers.ModelSerializer):
 
 
 class TicketDetailSerializer(TicketSerializer):
-    """Adds the comment thread for the ticket detail screen."""
+    """Adds the comment thread and other tickets from the same requester —
+    an agent can spot a pattern (e.g. the same person filing repeat
+    printer tickets) without searching for it manually."""
 
     comments = CommentSerializer(many=True, read_only=True)
+    related_tickets = serializers.SerializerMethodField()
 
     class Meta(TicketSerializer.Meta):
-        fields = TicketSerializer.Meta.fields + ['comments']
+        fields = TicketSerializer.Meta.fields + ['comments', 'related_tickets']
+
+    def get_related_tickets(self, ticket):
+        related = (
+            Ticket.objects.filter(requester_email=ticket.requester_email)
+            .exclude(id=ticket.id)
+            .order_by('-created_at')[:5]
+        )
+        return TicketSerializer(related, many=True).data
 
 
 # Response-shape-only serializers for plain APIViews that don't map to a
@@ -54,6 +65,38 @@ class LoginResponseSerializer(serializers.Serializer):
     user = LoginUserSerializer()
 
 
+class AgentResolvedCountSerializer(serializers.Serializer):
+    agent_id = serializers.IntegerField()
+    agent_name = serializers.CharField()
+    resolved_count = serializers.IntegerField()
+
+
+class NeedsAttentionSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    priority = serializers.CharField()
+    status = serializers.CharField()
+    requester_name = serializers.CharField()
+    age_hours = serializers.FloatField()
+    sla_fraction = serializers.FloatField()
+    hours_over_sla = serializers.FloatField()
+
+
+class AgentLoadSerializer(serializers.Serializer):
+    agent_id = serializers.IntegerField()
+    agent_name = serializers.CharField()
+    open_count = serializers.IntegerField()
+
+
 class StatsSerializer(serializers.Serializer):
     by_status = serializers.DictField(child=serializers.IntegerField())
     by_priority = serializers.DictField(child=serializers.IntegerField())
+    overdue_count = serializers.IntegerField()
+    avg_resolution_hours = serializers.FloatField(allow_null=True)
+    sla_achievement_rate = serializers.FloatField(allow_null=True)
+    tickets_by_agent = AgentResolvedCountSerializer(many=True)
+    tickets_per_hour = serializers.ListField(child=serializers.IntegerField())
+    needs_attention = NeedsAttentionSerializer(many=True)
+    total_open = serializers.IntegerField()
+    agent_load = AgentLoadSerializer(many=True)
+    unassigned_open_count = serializers.IntegerField()

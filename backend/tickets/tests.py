@@ -1,5 +1,10 @@
+from datetime import timedelta
+
 import pytest
+from django.core.cache import cache
 from django.core.management import call_command
+from django.utils import timezone
+from rest_framework.throttling import ScopedRateThrottle
 
 from tickets.models import Category, Ticket, User
 
@@ -62,6 +67,16 @@ def test_ticket_filters(auth_client, category):
 
     res = auth_client.get('/api/tickets', {'search': 'monitor'})
     assert [t['title'] for t in res.data['results']] == ['Broken monitor']
+
+
+@pytest.mark.django_db
+def test_ticket_list_filters_by_unassigned(auth_client, category, agent):
+    assigned = create_ticket(auth_client, category, title='Assigned one')
+    create_ticket(auth_client, category, title='Unassigned one')
+    auth_client.patch(f'/api/tickets/{assigned["id"]}', {'assigned_to': agent.id}, format='json')
+
+    res = auth_client.get('/api/tickets', {'assigned_to': 'none'})
+    assert [t['title'] for t in res.data['results']] == ['Unassigned one']
 
 
 @pytest.mark.django_db
@@ -174,6 +189,187 @@ def test_stats_zero_fills_all_statuses_and_priorities(auth_client, category):
     assert res.status_code == 200
     assert res.data['by_status'] == {'Open': 1, 'In Progress': 0, 'Resolved': 0, 'Escalated': 0}
     assert res.data['by_priority'] == {'Low': 0, 'Medium': 0, 'High': 1, 'Urgent': 0}
+
+
+def _backdate(ticket_id, hours):
+    Ticket.objects.filter(id=ticket_id).update(created_at=timezone.now() - timedelta(hours=hours))
+
+
+@pytest.mark.django_db
+def test_stats_includes_overdue_count(auth_client, category):
+    create_ticket(auth_client, category, priority='Urgent', title='Fresh urgent')
+    stale = create_ticket(auth_client, category, priority='Urgent', title='Stale urgent')
+    _backdate(stale['id'], hours=5)  # past the 4h Urgent threshold
+
+    res = auth_client.get('/api/stats')
+    assert res.data['overdue_count'] == 1
+
+
+@pytest.mark.django_db
+def test_ticket_detail_includes_related_tickets_from_same_requester(auth_client, category):
+    first = create_ticket(auth_client, category, title='Printer jam')
+    second = create_ticket(auth_client, category, title='Printer offline again')
+    create_ticket(auth_client, category, title='Unrelated', requester_email='someone.else@example.com')
+
+    res = auth_client.get(f'/api/tickets/{first["id"]}')
+    related_ids = [t['id'] for t in res.data['related_tickets']]
+    assert related_ids == [second['id']]
+
+
+@pytest.mark.django_db
+def test_ticket_list_filters_by_overdue(auth_client, category):
+    create_ticket(auth_client, category, priority='Low', title='Fresh low')
+    stale = create_ticket(auth_client, category, priority='Urgent', title='Stale urgent')
+    _backdate(stale['id'], hours=5)  # past the 4h Urgent threshold
+
+    res = auth_client.get('/api/tickets', {'overdue': 'true'})
+    assert [t['title'] for t in res.data['results']] == ['Stale urgent']
+
+
+@pytest.mark.django_db
+def test_ticket_export_returns_csv_of_filtered_tickets(auth_client, category):
+    create_ticket(auth_client, category, title='Low prio', priority='Low')
+    create_ticket(auth_client, category, title='Urgent prio', priority='Urgent')
+
+    res = auth_client.get('/api/tickets/export', {'priority': 'Urgent'})
+    assert res.status_code == 200
+    assert res['Content-Type'] == 'text/csv'
+    body = res.content.decode()
+    assert 'Urgent prio' in body
+    assert 'Low prio' not in body
+
+
+@pytest.mark.django_db
+def test_ticket_export_neutralizes_formula_injection(auth_client, category):
+    create_ticket(
+        auth_client, category,
+        title='=cmd|"/C calc"!A1',
+        requester_name='+SUM(1+1)',
+        requester_email='-2+3@example.com',
+    )
+
+    res = auth_client.get('/api/tickets/export')
+    body = res.content.decode()
+    assert "'=cmd|" in body
+    assert "'+SUM(1+1)" in body
+    assert "'-2+3@example.com" in body
+
+
+@pytest.mark.django_db
+def test_login_is_rate_limited(api_client, agent, monkeypatch):
+    # SimpleRateThrottle.THROTTLE_RATES is a class attribute snapshotted from
+    # api_settings at import time — override_settings doesn't reach it, so
+    # the rate has to be patched directly for the test to run fast.
+    monkeypatch.setitem(ScopedRateThrottle.THROTTLE_RATES, 'login', '2/min')
+    cache.clear()
+    for _ in range(2):
+        api_client.post('/api/auth/login', {'username': 'agent1', 'password': 'wrong'}, format='json')
+
+    res = api_client.post('/api/auth/login', {'username': 'agent1', 'password': 'wrong'}, format='json')
+    assert res.status_code == 429
+
+
+def _set_times(ticket_id, created_hours_ago, resolved_hours_ago):
+    now = timezone.now()
+    Ticket.objects.filter(id=ticket_id).update(
+        created_at=now - timedelta(hours=created_hours_ago),
+        resolved_at=now - timedelta(hours=resolved_hours_ago),
+    )
+
+
+@pytest.mark.django_db
+def test_stats_computes_average_resolution_hours(auth_client, category):
+    fast = create_ticket(auth_client, category)
+    slow = create_ticket(auth_client, category)
+    auth_client.patch(f'/api/tickets/{fast["id"]}', {'status': 'Resolved'}, format='json')
+    auth_client.patch(f'/api/tickets/{slow["id"]}', {'status': 'Resolved'}, format='json')
+    _set_times(fast['id'], created_hours_ago=10, resolved_hours_ago=8)  # took 2h
+    _set_times(slow['id'], created_hours_ago=10, resolved_hours_ago=4)  # took 6h
+
+    res = auth_client.get('/api/stats')
+    assert res.data['avg_resolution_hours'] == 4.0
+
+
+@pytest.mark.django_db
+def test_stats_computes_sla_achievement_rate(auth_client, category):
+    within_sla = create_ticket(auth_client, category, priority='Urgent')  # 4h threshold
+    breached_sla = create_ticket(auth_client, category, priority='Urgent')
+    auth_client.patch(f'/api/tickets/{within_sla["id"]}', {'status': 'Resolved'}, format='json')
+    auth_client.patch(f'/api/tickets/{breached_sla["id"]}', {'status': 'Resolved'}, format='json')
+    _set_times(within_sla['id'], created_hours_ago=10, resolved_hours_ago=8)  # resolved in 2h
+    _set_times(breached_sla['id'], created_hours_ago=10, resolved_hours_ago=2)  # resolved in 8h
+
+    res = auth_client.get('/api/stats')
+    assert res.data['sla_achievement_rate'] == 50.0
+
+
+@pytest.mark.django_db
+def test_stats_includes_tickets_resolved_by_agent(auth_client, l2_client, category, agent, l2_agent):
+    agent_ticket = create_ticket(auth_client, category)
+    l2_ticket = create_ticket(auth_client, category)
+    auth_client.patch(
+        f'/api/tickets/{agent_ticket["id"]}', {'assigned_to': agent.id, 'status': 'Resolved'}, format='json'
+    )
+    l2_client.patch(
+        f'/api/tickets/{l2_ticket["id"]}', {'assigned_to': l2_agent.id, 'status': 'Resolved'}, format='json'
+    )
+
+    res = auth_client.get('/api/stats')
+    by_agent = {row['agent_id']: row['resolved_count'] for row in res.data['tickets_by_agent']}
+    assert by_agent[agent.id] == 1
+    assert by_agent[l2_agent.id] == 1
+
+
+@pytest.mark.django_db
+def test_stats_includes_tickets_per_hour(auth_client, category):
+    create_ticket(auth_client, category, title='Just now')
+    older = create_ticket(auth_client, category, title='A few hours ago')
+    Ticket.objects.filter(id=older['id']).update(created_at=timezone.now() - timedelta(hours=3, minutes=30))
+
+    res = auth_client.get('/api/stats')
+    buckets = res.data['tickets_per_hour']
+    assert len(buckets) == 8
+    assert buckets[-1] == 1  # "Just now" falls in the most recent 1h window
+    assert sum(buckets) == 2
+
+
+@pytest.mark.django_db
+def test_stats_needs_attention_ranks_by_sla_urgency(auth_client, category):
+    safe = create_ticket(auth_client, category, priority='Low', title='Safe one')  # 72h threshold
+    breached = create_ticket(auth_client, category, priority='Urgent', title='Breached one')  # 4h threshold
+    Ticket.objects.filter(id=safe['id']).update(created_at=timezone.now() - timedelta(hours=1))
+    Ticket.objects.filter(id=breached['id']).update(created_at=timezone.now() - timedelta(hours=6))
+
+    res = auth_client.get('/api/stats')
+    titles = [row['title'] for row in res.data['needs_attention']]
+    assert titles[0] == 'Breached one'
+    assert res.data['total_open'] == 2
+    assert res.data['needs_attention'][0]['sla_fraction'] > 1
+
+
+@pytest.mark.django_db
+def test_stats_excludes_resolved_from_needs_attention(auth_client, category):
+    resolved = create_ticket(auth_client, category, priority='Urgent')
+    auth_client.patch(f'/api/tickets/{resolved["id"]}', {'status': 'Resolved'}, format='json')
+
+    res = auth_client.get('/api/stats')
+    assert res.data['needs_attention'] == []
+    assert res.data['total_open'] == 0
+
+
+@pytest.mark.django_db
+def test_stats_includes_agent_load(auth_client, l2_client, category, agent, l2_agent):
+    agent_ticket = create_ticket(auth_client, category)
+    l2_ticket = create_ticket(auth_client, category)
+    create_ticket(auth_client, category)  # left unassigned
+    auth_client.patch(f'/api/tickets/{agent_ticket["id"]}', {'assigned_to': agent.id}, format='json')
+    l2_client.patch(f'/api/tickets/{l2_ticket["id"]}', {'assigned_to': l2_agent.id}, format='json')
+
+    res = auth_client.get('/api/stats')
+    by_agent = {row['agent_id']: row['open_count'] for row in res.data['agent_load']}
+    assert by_agent[agent.id] == 1
+    assert by_agent[l2_agent.id] == 1
+    assert res.data['unassigned_open_count'] == 1
 
 
 @pytest.mark.django_db

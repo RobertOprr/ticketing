@@ -97,6 +97,17 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # General abuse protection, plus a tighter scope on login specifically
+    # (password brute-forcing is the realistic threat there).
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '1000/day',
+        'anon': '100/day',
+        'login': '10/minute',
+    },
 }
 
 SPECTACULAR_SETTINGS = {
