@@ -1,15 +1,24 @@
-from django.db.models import Count, Q
+from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.serializers import AuthTokenSerializer
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Category, Ticket
-from .serializers import CategorySerializer, CommentSerializer, TicketDetailSerializer, TicketSerializer
+from .serializers import (
+    CategorySerializer,
+    CommentSerializer,
+    LoginResponseSerializer,
+    StatsSerializer,
+    TicketDetailSerializer,
+    TicketSerializer,
+)
 
 
 class LoginView(APIView):
@@ -20,6 +29,7 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @extend_schema(request=AuthTokenSerializer, responses=LoginResponseSerializer)
     def post(self, request):
         serializer = AuthTokenSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -36,8 +46,31 @@ class CategoryListView(generics.ListAPIView):
     serializer_class = CategorySerializer
 
 
+# Priority is stored as text (Low/Medium/High/Urgent), so a plain string
+# sort would put them in alphabetical rather than urgency order — this
+# maps each value to its rank so ordering by it is actually meaningful.
+PRIORITY_RANK = Case(
+    *[When(priority=value, then=Value(rank)) for rank, (value, _) in enumerate(Ticket.Priority.choices)],
+    output_field=IntegerField(),
+)
+
+ORDERING_OPTIONS = {
+    'created_at': ('created_at', {}),
+    '-created_at': ('-created_at', {}),
+    'priority': ('priority_rank', {'priority_rank': PRIORITY_RANK}),
+    '-priority': ('-priority_rank', {'priority_rank': PRIORITY_RANK}),
+}
+
+
+class TicketPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class TicketListCreateView(generics.ListCreateAPIView):
     serializer_class = TicketSerializer
+    pagination_class = TicketPagination
 
     def get_queryset(self):
         qs = Ticket.objects.select_related('category', 'assigned_to').all()
@@ -68,7 +101,12 @@ class TicketListCreateView(generics.ListCreateAPIView):
                 | Q(requester_email__icontains=search)
             )
 
-        return qs.order_by('-created_at')
+        order_field, annotations = ORDERING_OPTIONS.get(
+            params.get('ordering'), ORDERING_OPTIONS['-created_at']
+        )
+        if annotations:
+            qs = qs.annotate(**annotations)
+        return qs.order_by(order_field)
 
 
 class TicketDetailView(generics.RetrieveUpdateAPIView):
@@ -101,6 +139,7 @@ class CommentCreateView(generics.CreateAPIView):
 
 
 class EscalateTicketView(APIView):
+    @extend_schema(request=None, responses=TicketSerializer)
     def post(self, request, pk):
         ticket = get_object_or_404(Ticket, pk=pk)
         ticket.status = Ticket.Status.ESCALATED
@@ -112,6 +151,7 @@ class StatsView(APIView):
     """Counts for the dashboard cards — every status/priority is present,
     even at zero, so the cards don't disappear on a fresh install."""
 
+    @extend_schema(responses=StatsSerializer)
     def get(self, request):
         by_status = dict.fromkeys((choice for choice, _ in Ticket.Status.choices), 0)
         for row in Ticket.objects.values('status').annotate(count=Count('id')):

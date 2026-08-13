@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import PriorityBadge from '../components/PriorityBadge'
@@ -6,10 +6,11 @@ import { formatDuration, hoursOpen, isOverdue } from '../lib/sla'
 
 const STATUSES = ['Open', 'In Progress', 'Resolved', 'Escalated']
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
-const PRIORITY_ORDER = { Low: 0, Medium: 1, High: 2, Urgent: 3 }
 
 export default function TicketListPage() {
   const [tickets, setTickets] = useState([])
+  const [count, setCount] = useState(0)
+  const [hasNext, setHasNext] = useState(false)
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -19,6 +20,7 @@ export default function TicketListPage() {
   const [category, setCategory] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   const [sortBy, setSortBy] = useState('date')
   const [sortDir, setSortDir] = useState('desc')
@@ -33,27 +35,27 @@ export default function TicketListPage() {
     return () => clearTimeout(id)
   }, [searchInput])
 
+  // Any change to filters/sort invalidates the current page.
   useEffect(() => {
+    setPage(1)
+  }, [status, priority, category, search, sortBy, sortDir])
+
+  useEffect(() => {
+    const orderingField = sortBy === 'priority' ? 'priority' : 'created_at'
+    const ordering = sortDir === 'asc' ? orderingField : `-${orderingField}`
+
     setLoading(true)
     setError(null)
     api
-      .get('/tickets', { status, priority, category, search })
-      .then(setTickets)
+      .get('/tickets', { status, priority, category, search, ordering, page })
+      .then((data) => {
+        setTickets(data.results)
+        setCount(data.count)
+        setHasNext(Boolean(data.next))
+      })
       .catch(() => setError('Could not load tickets.'))
       .finally(() => setLoading(false))
-  }, [status, priority, category, search])
-
-  const sortedTickets = useMemo(() => {
-    const copy = [...tickets]
-    copy.sort((a, b) => {
-      const diff =
-        sortBy === 'priority'
-          ? PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
-          : new Date(a.created_at) - new Date(b.created_at)
-      return sortDir === 'asc' ? diff : -diff
-    })
-    return copy
-  }, [tickets, sortBy, sortDir])
+  }, [status, priority, category, search, sortBy, sortDir, page])
 
   function toggleSort(field) {
     if (sortBy === field) {
@@ -125,43 +127,57 @@ export default function TicketListPage() {
       {loading && <p>Loading...</p>}
 
       {!loading && !error && (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Status</th>
-              <th onClick={() => toggleSort('priority')} className="sortable">
-                Priority {sortBy === 'priority' && (sortDir === 'asc' ? '↑' : '↓')}
-              </th>
-              <th>Category</th>
-              <th onClick={() => toggleSort('date')} className="sortable">
-                Open for {sortBy === 'date' && (sortDir === 'asc' ? '↑' : '↓')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedTickets.map((ticket) => (
-              <tr key={ticket.id}>
-                <td>
-                  <Link to={`/tickets/${ticket.id}`}>{ticket.title}</Link>
-                </td>
-                <td>{ticket.status}</td>
-                <td>
-                  <PriorityBadge priority={ticket.priority} />
-                </td>
-                <td>{categoryName(ticket.category)}</td>
-                <td className={isOverdue(ticket) ? 'overdue' : ''}>
-                  {formatDuration(hoursOpen(ticket))}
-                </td>
-              </tr>
-            ))}
-            {sortedTickets.length === 0 && (
+        <>
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={5}>No tickets match these filters.</td>
+                <th>Title</th>
+                <th>Status</th>
+                <th onClick={() => toggleSort('priority')} className="sortable">
+                  Priority {sortBy === 'priority' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Category</th>
+                <th onClick={() => toggleSort('date')} className="sortable">
+                  Open for {sortBy === 'date' && (sortDir === 'asc' ? '↑' : '↓')}
+                </th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tickets.map((ticket) => (
+                <tr key={ticket.id}>
+                  <td>
+                    <Link to={`/tickets/${ticket.id}`}>{ticket.title}</Link>
+                  </td>
+                  <td>{ticket.status}</td>
+                  <td>
+                    <PriorityBadge priority={ticket.priority} />
+                  </td>
+                  <td>{categoryName(ticket.category)}</td>
+                  <td className={isOverdue(ticket) ? 'overdue' : ''}>
+                    {formatDuration(hoursOpen(ticket))}
+                  </td>
+                </tr>
+              ))}
+              {tickets.length === 0 && (
+                <tr>
+                  <td colSpan={5}>No tickets match these filters.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="pagination">
+            <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              Previous
+            </button>
+            <span>
+              Page {page} — {count} ticket{count === 1 ? '' : 's'}
+            </span>
+            <button type="button" disabled={!hasNext} onClick={() => setPage((p) => p + 1)}>
+              Next
+            </button>
+          </div>
+        </>
       )}
     </div>
   )

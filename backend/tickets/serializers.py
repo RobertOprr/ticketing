@@ -38,3 +38,22 @@ class TicketDetailSerializer(TicketSerializer):
 
     class Meta(TicketSerializer.Meta):
         fields = TicketSerializer.Meta.fields + ['comments']
+
+
+# Response-shape-only serializers for plain APIViews that don't map to a
+# model — exist purely so drf-spectacular can document their output.
+class LoginUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    email = serializers.EmailField()
+    role = serializers.CharField()
+
+
+class LoginResponseSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    user = LoginUserSerializer()
+
+
+class StatsSerializer(serializers.Serializer):
+    by_status = serializers.DictField(child=serializers.IntegerField())
+    by_priority = serializers.DictField(child=serializers.IntegerField())

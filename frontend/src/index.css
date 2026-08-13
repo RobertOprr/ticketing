@@ -205,6 +205,13 @@ button:disabled {
   align-items: center;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
 .link-button {
   background: none;
   color: #2563eb;

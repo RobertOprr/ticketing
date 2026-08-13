@@ -43,8 +43,8 @@ def test_create_and_list_ticket(auth_client, category):
 
     res = auth_client.get('/api/tickets')
     assert res.status_code == 200
-    assert len(res.data) == 1
-    assert res.data[0]['id'] == created['id']
+    assert res.data['count'] == 1
+    assert res.data['results'][0]['id'] == created['id']
 
 
 @pytest.mark.django_db
@@ -54,13 +54,47 @@ def test_ticket_filters(auth_client, category):
     create_ticket(auth_client, other_category, title='App crash', priority='Urgent')
 
     res = auth_client.get('/api/tickets', {'priority': 'Urgent'})
-    assert [t['title'] for t in res.data] == ['App crash']
+    assert [t['title'] for t in res.data['results']] == ['App crash']
 
     res = auth_client.get('/api/tickets', {'category': category.id})
-    assert [t['title'] for t in res.data] == ['Broken monitor']
+    assert [t['title'] for t in res.data['results']] == ['Broken monitor']
 
     res = auth_client.get('/api/tickets', {'search': 'monitor'})
-    assert [t['title'] for t in res.data] == ['Broken monitor']
+    assert [t['title'] for t in res.data['results']] == ['Broken monitor']
+
+
+@pytest.mark.django_db
+def test_ticket_ordering_by_priority_uses_urgency_not_alphabetical(auth_client, category):
+    create_ticket(auth_client, category, title='Low one', priority='Low')
+    create_ticket(auth_client, category, title='Urgent one', priority='Urgent')
+    create_ticket(auth_client, category, title='Medium one', priority='Medium')
+    create_ticket(auth_client, category, title='High one', priority='High')
+
+    res = auth_client.get('/api/tickets', {'ordering': 'priority'})
+    assert [t['title'] for t in res.data['results']] == [
+        'Low one', 'Medium one', 'High one', 'Urgent one'
+    ]
+
+    res = auth_client.get('/api/tickets', {'ordering': '-priority'})
+    assert [t['title'] for t in res.data['results']] == [
+        'Urgent one', 'High one', 'Medium one', 'Low one'
+    ]
+
+
+@pytest.mark.django_db
+def test_ticket_list_is_paginated(auth_client, category):
+    for i in range(25):
+        create_ticket(auth_client, category, title=f'Ticket {i}')
+
+    res = auth_client.get('/api/tickets', {'page_size': 20})
+    assert res.status_code == 200
+    assert res.data['count'] == 25
+    assert len(res.data['results']) == 20
+    assert res.data['next'] is not None
+
+    res = auth_client.get('/api/tickets', {'page_size': 20, 'page': 2})
+    assert len(res.data['results']) == 5
+    assert res.data['next'] is None
 
 
 @pytest.mark.django_db
