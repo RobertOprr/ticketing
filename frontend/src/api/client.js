@@ -8,7 +8,7 @@ function authHeader() {
   return token ? { Authorization: `Token ${token}` } : {}
 }
 
-async function request(path, { method = 'GET', body, params } = {}) {
+function buildUrl(path, params) {
   let url = `${API_BASE}${path}`
   if (params) {
     const query = new URLSearchParams(
@@ -16,6 +16,11 @@ async function request(path, { method = 'GET', body, params } = {}) {
     ).toString()
     if (query) url += `?${query}`
   }
+  return url
+}
+
+async function request(path, { method = 'GET', body, params } = {}) {
+  const url = buildUrl(path, params)
 
   const res = await fetch(url, {
     method,
@@ -44,8 +49,15 @@ async function request(path, { method = 'GET', body, params } = {}) {
   return res.json()
 }
 
+async function requestBlob(path, params) {
+  const res = await fetch(buildUrl(path, params), { headers: { ...authHeader() } })
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`)
+  return res.blob()
+}
+
 export const api = {
   get: (path, params) => request(path, { params }),
   post: (path, body) => request(path, { method: 'POST', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
+  getBlob: (path, params) => requestBlob(path, params),
 }

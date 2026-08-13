@@ -27,7 +27,8 @@ export default function LoginPage() {
   return (
     <div className="centered-page">
       <form className="card form" onSubmit={handleSubmit}>
-        <h1>Help Desk Login</h1>
+        <p className="eyebrow">Sign in</p>
+        <h1>Help Desk</h1>
         {error && <p className="error-text">{error}</p>}
         <label>
           Username
