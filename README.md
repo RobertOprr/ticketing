@@ -93,7 +93,7 @@ Deployed via the included `render.yaml` [Blueprint](https://render.com/docs/blue
 2. In the Render dashboard: **New → Blueprint**, point it at this repo.
 3. After the first deploy, set `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` on the backend service (left blank in the blueprint on purpose — Render prompts for these on blueprint creation).
 4. Check the actual URLs Render assigned to both services — if they differ from `helpdesk-backend.onrender.com` / `helpdesk-frontend.onrender.com` (Render appends a suffix if the name's taken), update `DJANGO_ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` on the backend and `VITE_API_BASE` on the frontend to match, then redeploy.
-5. Create a superuser on the deployed backend via Render's shell: `python manage.py createsuperuser`.
+5. Set `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_NAME` on the backend service and redeploy — the build command runs `manage.py seed_production`, which creates that superuser and the four spec categories. It's idempotent (safe to leave in the build command permanently; won't recreate the user or error on later deploys). Render's free tier has no shell access, which is why this runs at build time instead of interactively.
 
 Locally, none of this matters — `DEBUG`, `SECRET_KEY`, and the DB connection all fall back to the same values `docker compose` already uses.
 

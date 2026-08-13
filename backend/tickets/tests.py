@@ -1,6 +1,7 @@
 import pytest
+from django.core.management import call_command
 
-from tickets.models import Category, Ticket
+from tickets.models import Category, Ticket, User
 
 
 def create_ticket(auth_client, category, **overrides):
@@ -173,3 +174,32 @@ def test_stats_zero_fills_all_statuses_and_priorities(auth_client, category):
     assert res.status_code == 200
     assert res.data['by_status'] == {'Open': 1, 'In Progress': 0, 'Resolved': 0, 'Escalated': 0}
     assert res.data['by_priority'] == {'Low': 0, 'Medium': 0, 'High': 1, 'Urgent': 0}
+
+
+@pytest.mark.django_db
+def test_seed_production_is_a_noop_without_superuser_env_vars(monkeypatch):
+    monkeypatch.delenv('DJANGO_SUPERUSER_USERNAME', raising=False)
+    monkeypatch.delenv('DJANGO_SUPERUSER_PASSWORD', raising=False)
+
+    call_command('seed_production')
+
+    assert set(Category.objects.values_list('name', flat=True)) == {
+        'Hardware', 'Software', 'Network', 'Account'
+    }
+    assert not User.objects.exists()
+
+
+@pytest.mark.django_db
+def test_seed_production_creates_superuser_once(monkeypatch):
+    monkeypatch.setenv('DJANGO_SUPERUSER_USERNAME', 'admin')
+    monkeypatch.setenv('DJANGO_SUPERUSER_PASSWORD', 'a-real-password')
+    monkeypatch.setenv('DJANGO_SUPERUSER_NAME', 'Admin Agent')
+
+    call_command('seed_production')
+    call_command('seed_production')  # idempotent — must not error or duplicate
+
+    assert User.objects.filter(username='admin').count() == 1
+    user = User.objects.get(username='admin')
+    assert user.is_superuser
+    assert user.name == 'Admin Agent'
+    assert user.check_password('a-real-password')

@@ -5,20 +5,28 @@
 # fill them in via the Render dashboard after the first deploy. If your
 # host requires SSL (e.g. Aiven), upload its CA cert as a Render Secret
 # File named aiven-ca.pem — it lands at /etc/secrets/aiven-ca.pem, which
-# DB_SSL_CA below already points at.
+# DB_SSL_CA below already points at. DJANGO_SUPERUSER_* creates the first
+# login and seed categories via `manage.py seed_production` in the build
+# command — free-tier Render has no shell for `createsuperuser`.
 services:
   - name: helpdesk-backend
     type: web
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed_production"
     startCommand: "gunicorn helpdesk_backend.wsgi:application"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
       - key: DJANGO_SECRET_KEY
         generateValue: true
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: DJANGO_SUPERUSER_NAME
+        sync: false
       - key: DJANGO_DEBUG
         value: "False"
       - key: DJANGO_ALLOWED_HOSTS
