@@ -2,7 +2,10 @@
 # Deploys the Django API and the React static build as two services.
 # MySQL isn't a Render-managed database type, so DB_* vars point at
 # whatever external MySQL host you provision (Aiven, Railway, etc.) —
-# fill them in via the Render dashboard after the first deploy.
+# fill them in via the Render dashboard after the first deploy. If your
+# host requires SSL (e.g. Aiven), upload its CA cert as a Render Secret
+# File named aiven-ca.pem — it lands at /etc/secrets/aiven-ca.pem, which
+# DB_SSL_CA below already points at.
 services:
   - name: helpdesk-backend
     type: web
@@ -30,6 +33,8 @@ services:
         sync: false
       - key: DB_PORT
         sync: false
+      - key: DB_SSL_CA
+        value: /etc/secrets/aiven-ca.pem
 
   - name: helpdesk-frontend
     type: web

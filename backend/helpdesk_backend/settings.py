@@ -67,7 +67,14 @@ TEMPLATES = [
 WSGI_APPLICATION = 'helpdesk_backend.wsgi.application'
 
 # MySQL — defaults match docker-compose.yml for local dev; set the DB_*
-# env vars in production to point at a real MySQL host.
+# env vars in production to point at a real MySQL host. DB_SSL_CA is only
+# set in production (e.g. Aiven requires SSL) — local Docker MySQL doesn't
+# need it, so OPTIONS stays empty there.
+DB_OPTIONS = {}
+_db_ssl_ca = os.environ.get('DB_SSL_CA')
+if _db_ssl_ca:
+    DB_OPTIONS['ssl'] = {'ca': _db_ssl_ca}
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
@@ -76,6 +83,7 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', 'helpdesk'),
         'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
         'PORT': os.environ.get('DB_PORT', '3306'),
+        'OPTIONS': DB_OPTIONS,
     }
 }
 
