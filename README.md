@@ -9,12 +9,14 @@ Personal portfolio project — see the [Honesty note](#honesty-note) below.
 
 ## Features
 
-- Agent login (token-based auth)
-- Create, list, filter (status/priority/category), and search tickets
-- Ticket detail with full comment thread
+- Agent login (token-based auth, rate-limited against brute force)
+- Create, list, filter (status/priority/category/assignee), and search tickets with live autocomplete
+- Ticket detail with full comment thread and related-tickets-from-same-requester panel
 - Change status/priority, assign to self, escalate to L2
-- Dashboard with live counts by status and priority
+- Export the current filtered ticket list to CSV (sanitized against spreadsheet formula injection)
+- Dashboard with live counts by status/priority, SLA breach alerts, needs-attention queue ranked by SLA urgency, per-agent open-ticket load, and tickets-resolved-by-agent
 - SLA indicator — tickets are flagged red once they exceed their priority's time-open threshold
+- Auto-generated OpenAPI schema + Swagger UI (`/api/docs`)
 
 ## Tech stack
 
@@ -104,20 +106,22 @@ Locally, none of this matters — `DEBUG`, `SECRET_KEY`, and the DB connection a
 | POST | `/api/auth/login` | Agent login, returns token + user info |
 | GET | `/api/tickets` | List tickets — filters: `status`, `priority`, `category`, `assigned_to`, `search` |
 | POST | `/api/tickets` | Create a ticket |
+| GET | `/api/tickets/export` | CSV export of the current filtered list |
 | GET | `/api/tickets/{id}` | Ticket detail, including comments |
 | PATCH | `/api/tickets/{id}` | Update status / priority / assigned_to |
 | POST | `/api/tickets/{id}/escalate` | Escalate to L2 |
 | POST | `/api/tickets/{id}/comments` | Add a comment |
 | GET | `/api/categories` | List categories |
-| GET | `/api/stats` | Ticket counts by status and priority |
+| GET | `/api/stats` | Dashboard analytics — counts, SLA breaches, agent load, resolution metrics |
 
-All endpoints except login require `Authorization: Token <token>`.
+All endpoints except login require `Authorization: Token <token>`. Full interactive schema at `/api/docs`.
 
 ## CV line
 
 **Help Desk Ticketing App** | Python, Django, DRF, React, MySQL — Personal Project
-- Built a full-stack ticketing system with priority levels, status workflow (Open/In Progress/Resolved/Escalated), assignment and escalation to L2
-- Added a dashboard with live counts and an SLA/time-open indicator per priority
+- Built a full-stack ticketing system with priority levels, a 4-stage status workflow, assignment, and escalation to L2, backed by 8 REST endpoints and 49 automated tests (28 backend / 21 frontend)
+- Built an analytics dashboard computing SLA breach detection, resolution-time averages, and per-agent load across 4 priority tiers
+- Added CSV export with sanitization against spreadsheet formula injection, and rate-limited authentication against brute-force login attempts
 
 ## Honesty note
 
