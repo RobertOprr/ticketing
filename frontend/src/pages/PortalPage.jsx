@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import PriorityBadge from '../components/PriorityBadge'
+import StarRating from '../components/StarRating'
 import { initials } from '../lib/initials'
 import { STATUS_TONE, toneStyle } from '../lib/tone'
 
@@ -11,6 +12,7 @@ export default function PortalPage() {
   const [ticket, setTicket] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [ratingSubmitting, setRatingSubmitting] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -24,6 +26,18 @@ export default function PortalPage() {
       setError('No ticket found with that ID and email. Double-check both and try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleRate(rating) {
+    setRatingSubmitting(true)
+    try {
+      const updated = await api.post('/portal/rate', { id: ticket.id, email, rating })
+      setTicket(updated)
+    } catch {
+      setError('Could not submit your rating. Please try again.')
+    } finally {
+      setRatingSubmitting(false)
     }
   }
 
@@ -65,6 +79,22 @@ export default function PortalPage() {
               <span className="hint-text">{ticket.category_name}</span>
             </div>
             <p>{ticket.description}</p>
+
+            {ticket.status === 'Resolved' && (
+              <div className="portal-rating">
+                {ticket.satisfaction_rating != null ? (
+                  <>
+                    <p className="eyebrow">Your rating</p>
+                    <StarRating value={ticket.satisfaction_rating} />
+                  </>
+                ) : (
+                  <>
+                    <p className="eyebrow">How did we do?</p>
+                    <StarRating onRate={handleRate} submitting={ratingSubmitting} />
+                  </>
+                )}
+              </div>
+            )}
 
             {ticket.comments.length > 0 && (
               <>

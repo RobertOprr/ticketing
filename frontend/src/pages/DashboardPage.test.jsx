@@ -14,6 +14,7 @@ const mockStats = {
   overdue_count: 1,
   avg_resolution_hours: 4.5,
   sla_achievement_rate: 80,
+  avg_satisfaction_rating: 4.2,
   tickets_by_agent: [{ agent_id: 1, agent_name: 'Agent One', resolved_count: 1 }],
   tickets_per_hour: [0, 0, 1, 0, 2, 0, 1, 3],
   needs_attention: [

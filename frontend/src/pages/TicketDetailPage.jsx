@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import PriorityBadge from '../components/PriorityBadge'
+import StarRating from '../components/StarRating'
 import { initials } from '../lib/initials'
 import { formatDuration, hoursOpen, isOverdue } from '../lib/sla'
 import { PRIORITY_TONE, STATUS_TONE, toneStyle } from '../lib/tone'
@@ -188,6 +189,11 @@ export default function TicketDetailPage() {
             <div className="property">
               <span className="property-label">Resolved</span>
               <p className="value mono">{new Date(ticket.resolved_at).toLocaleString()}</p>
+              {ticket.satisfaction_rating != null ? (
+                <StarRating value={ticket.satisfaction_rating} />
+              ) : (
+                <p className="hint-text">Not yet rated by requester</p>
+              )}
             </div>
           )}
 

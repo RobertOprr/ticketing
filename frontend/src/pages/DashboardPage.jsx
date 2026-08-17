@@ -182,6 +182,16 @@ export default function DashboardPage() {
             </div>
             <div className="stat-label">SLA achievement rate</div>
           </div>
+          <div className="card stat-card">
+            <div className="stat-count">
+              {stats.avg_satisfaction_rating != null ? (
+                `${stats.avg_satisfaction_rating.toFixed(1)} / 5`
+              ) : (
+                <span className="stat-empty">No ratings yet</span>
+              )}
+            </div>
+            <div className="stat-label">Satisfaction</div>
+          </div>
           <div className="card stat-card stat-card-wide">
             {hasRecentActivity ? (
               <Sparkbars data={stats.tickets_per_hour} />
