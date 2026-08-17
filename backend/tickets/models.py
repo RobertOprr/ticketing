@@ -63,6 +63,8 @@ class Ticket(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
+    # Set once, by the requester, via the public portal — never by an agent.
+    satisfaction_rating = models.PositiveSmallIntegerField(null=True, blank=True)
 
     def __str__(self):
         return f'#{self.id} {self.title}'

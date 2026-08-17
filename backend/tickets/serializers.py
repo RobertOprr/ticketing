@@ -41,9 +41,12 @@ class TicketSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'requester_name', 'requester_email',
             'category', 'priority', 'status', 'assigned_to',
-            'created_at', 'updated_at', 'resolved_at',
+            'created_at', 'updated_at', 'resolved_at', 'satisfaction_rating',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'resolved_at']
+        # satisfaction_rating is agent-read-only — only the public portal's
+        # rate endpoint (which writes the model directly, bypassing this
+        # serializer) can set it.
+        read_only_fields = ['id', 'created_at', 'updated_at', 'resolved_at', 'satisfaction_rating']
 
 
 class TicketDetailSerializer(TicketSerializer):
@@ -79,7 +82,7 @@ class PortalTicketSerializer(serializers.ModelSerializer):
         model = Ticket
         fields = [
             'id', 'title', 'description', 'status', 'priority', 'category_name',
-            'created_at', 'updated_at', 'resolved_at', 'comments',
+            'created_at', 'updated_at', 'resolved_at', 'comments', 'satisfaction_rating',
         ]
 
 
@@ -126,6 +129,7 @@ class StatsSerializer(serializers.Serializer):
     overdue_count = serializers.IntegerField()
     avg_resolution_hours = serializers.FloatField(allow_null=True)
     sla_achievement_rate = serializers.FloatField(allow_null=True)
+    avg_satisfaction_rating = serializers.FloatField(allow_null=True)
     tickets_by_agent = AgentResolvedCountSerializer(many=True)
     tickets_per_hour = serializers.ListField(child=serializers.IntegerField())
     needs_attention = NeedsAttentionSerializer(many=True)

@@ -388,6 +388,43 @@ class PortalTicketLookupView(APIView):
         return Response(PortalTicketSerializer(ticket).data)
 
 
+class PortalRateTicketView(APIView):
+    """Lets the requester leave a 1-5 satisfaction rating on a resolved
+    ticket — once. Same id+email proof and throttle scope as the lookup."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'portal_lookup'
+
+    @extend_schema(responses=PortalTicketSerializer)
+    def post(self, request):
+        ticket_id = request.data.get('id')
+        email = request.data.get('email')
+        rating = request.data.get('rating')
+        if not ticket_id or not email or rating is None:
+            return Response({'detail': 'id, email, and rating are all required.'}, status=400)
+
+        try:
+            rating = int(rating)
+        except (TypeError, ValueError):
+            return Response({'detail': 'rating must be a whole number from 1 to 5.'}, status=400)
+        if not 1 <= rating <= 5:
+            return Response({'detail': 'rating must be a whole number from 1 to 5.'}, status=400)
+
+        ticket = Ticket.objects.filter(id=ticket_id, requester_email__iexact=email).first()
+        if not ticket:
+            return Response({'detail': 'No matching ticket found.'}, status=404)
+        if ticket.status != Ticket.Status.RESOLVED:
+            return Response({'detail': 'Only resolved tickets can be rated.'}, status=400)
+        if ticket.satisfaction_rating is not None:
+            return Response({'detail': 'This ticket has already been rated.'}, status=400)
+
+        ticket.satisfaction_rating = rating
+        ticket.save(update_fields=['satisfaction_rating'])
+        return Response(PortalTicketSerializer(ticket).data)
+
+
 class StatsView(APIView):
     """Counts for the dashboard cards — every status/priority is present,
     even at zero, so the cards don't disappear on a fresh install."""
@@ -417,6 +454,11 @@ class StatsView(APIView):
             round(sla_met_count / resolved_count * 100, 1) if resolved_count else None
         )
 
+        avg_satisfaction = resolved_qs.filter(satisfaction_rating__isnull=False).aggregate(
+            avg=Avg('satisfaction_rating')
+        )['avg']
+        avg_satisfaction_rating = round(avg_satisfaction, 2) if avg_satisfaction is not None else None
+
         tickets_by_agent = [
             {
                 'agent_id': row['assigned_to_id'],
@@ -440,6 +482,7 @@ class StatsView(APIView):
             'overdue_count': overdue_count,
             'avg_resolution_hours': avg_resolution_hours,
             'sla_achievement_rate': sla_achievement_rate,
+            'avg_satisfaction_rating': avg_satisfaction_rating,
             'tickets_by_agent': tickets_by_agent,
             'tickets_per_hour': tickets_per_hour(),
             'needs_attention': needs_attention_list,

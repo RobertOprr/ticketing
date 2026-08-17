@@ -354,6 +354,57 @@ def test_portal_lookup_rejects_mismatched_email(auth_client, api_client, categor
 
 
 @pytest.mark.django_db
+def test_portal_rate_rejects_unresolved_ticket(auth_client, api_client, category):
+    created = create_ticket(auth_client, category)
+
+    res = api_client.post(
+        '/api/portal/rate', {'id': created['id'], 'email': 'jane@example.com', 'rating': 5}, format='json'
+    )
+    assert res.status_code == 400
+
+
+@pytest.mark.django_db
+def test_portal_rate_rejects_out_of_range_rating(auth_client, api_client, category):
+    created = create_ticket(auth_client, category)
+    auth_client.patch(f'/api/tickets/{created["id"]}', {'status': 'Resolved'}, format='json')
+
+    res = api_client.post(
+        '/api/portal/rate', {'id': created['id'], 'email': 'jane@example.com', 'rating': 7}, format='json'
+    )
+    assert res.status_code == 400
+
+
+@pytest.mark.django_db
+def test_portal_rate_succeeds_once_then_rejects_a_second_rating(auth_client, api_client, category):
+    created = create_ticket(auth_client, category)
+    auth_client.patch(f'/api/tickets/{created["id"]}', {'status': 'Resolved'}, format='json')
+
+    res = api_client.post(
+        '/api/portal/rate', {'id': created['id'], 'email': 'jane@example.com', 'rating': 4}, format='json'
+    )
+    assert res.status_code == 200
+    assert res.data['satisfaction_rating'] == 4
+
+    res_again = api_client.post(
+        '/api/portal/rate', {'id': created['id'], 'email': 'jane@example.com', 'rating': 5}, format='json'
+    )
+    assert res_again.status_code == 400
+
+
+@pytest.mark.django_db
+def test_stats_includes_avg_satisfaction_rating(auth_client, api_client, category):
+    first = create_ticket(auth_client, category)
+    second = create_ticket(auth_client, category)
+    auth_client.patch(f'/api/tickets/{first["id"]}', {'status': 'Resolved'}, format='json')
+    auth_client.patch(f'/api/tickets/{second["id"]}', {'status': 'Resolved'}, format='json')
+    api_client.post('/api/portal/rate', {'id': first['id'], 'email': 'jane@example.com', 'rating': 4}, format='json')
+    api_client.post('/api/portal/rate', {'id': second['id'], 'email': 'jane@example.com', 'rating': 2}, format='json')
+
+    res = auth_client.get('/api/stats')
+    assert res.data['avg_satisfaction_rating'] == 3.0
+
+
+@pytest.mark.django_db
 def test_login_is_rate_limited(api_client, agent, monkeypatch):
     # SimpleRateThrottle.THROTTLE_RATES is a class attribute snapshotted from
     # api_settings at import time — override_settings doesn't reach it, so
