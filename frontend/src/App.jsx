@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './auth/ProtectedRoute'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
+import PortalPage from './pages/PortalPage'
 import DashboardPage from './pages/DashboardPage'
 import TicketListPage from './pages/TicketListPage'
 import TicketDetailPage from './pages/TicketDetailPage'
@@ -11,6 +12,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/portal" element={<PortalPage />} />
       <Route
         element={
           <ProtectedRoute>

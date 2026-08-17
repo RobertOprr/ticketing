@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import PriorityBadge from '../components/PriorityBadge'
+import { initials } from '../lib/initials'
 import { formatDuration, hoursOpen, isOverdue } from '../lib/sla'
 import { PRIORITY_TONE, STATUS_TONE, toneStyle } from '../lib/tone'
 import { useToast } from '../toast/ToastContext'
@@ -16,6 +17,7 @@ export default function TicketDetailPage() {
   const showToast = useToast()
   const [ticket, setTicket] = useState(null)
   const [categories, setCategories] = useState([])
+  const [cannedResponses, setCannedResponses] = useState([])
   const [error, setError] = useState(null)
   const [commentBody, setCommentBody] = useState('')
   const [postingComment, setPostingComment] = useState(false)
@@ -32,6 +34,32 @@ export default function TicketDetailPage() {
   useEffect(() => {
     api.get('/categories').then(setCategories).catch(() => {})
   }, [])
+
+  function loadCannedResponses() {
+    return api.get('/canned-responses').then(setCannedResponses)
+  }
+
+  useEffect(() => {
+    loadCannedResponses().catch(() => {})
+  }, [])
+
+  function applyCannedResponse(id) {
+    const response = cannedResponses.find((r) => String(r.id) === id)
+    if (response) setCommentBody(response.body)
+  }
+
+  async function handleSaveCannedResponse() {
+    if (!commentBody.trim()) return
+    const title = window.prompt('Save this reply as a canned response titled:')
+    if (!title?.trim()) return
+    try {
+      await api.post('/canned-responses', { title: title.trim(), body: commentBody })
+      await loadCannedResponses()
+      showToast('Canned response saved')
+    } catch {
+      setError('Could not save the canned response.')
+    }
+  }
 
   async function updateTicket(patch, successMessage) {
     try {
@@ -78,7 +106,7 @@ export default function TicketDetailPage() {
   return (
     <div>
       <h1>
-        #{ticket.id} {ticket.title}
+        <span className="mono">#{ticket.id}</span> {ticket.title}
       </h1>
 
       <div className="ticket-layout">
@@ -138,19 +166,19 @@ export default function TicketDetailPage() {
 
           <div className="property">
             <span className="property-label">Created</span>
-            <p className="value">{new Date(ticket.created_at).toLocaleString()}</p>
+            <p className="value mono">{new Date(ticket.created_at).toLocaleString()}</p>
           </div>
 
           {ticket.updated_at !== ticket.created_at && (
             <div className="property">
               <span className="property-label">Last updated</span>
-              <p className="value">{new Date(ticket.updated_at).toLocaleString()}</p>
+              <p className="value mono">{new Date(ticket.updated_at).toLocaleString()}</p>
             </div>
           )}
 
           <div className="property">
             <span className="property-label">Open for</span>
-            <p className={`value ${isOverdue(ticket) ? 'overdue' : ''}`}>
+            <p className={`value mono ${isOverdue(ticket) ? 'overdue' : ''}`}>
               {formatDuration(hoursOpen(ticket))}
               {isOverdue(ticket) && ' — SLA breached'}
             </p>
@@ -159,7 +187,7 @@ export default function TicketDetailPage() {
           {ticket.resolved_at && (
             <div className="property">
               <span className="property-label">Resolved</span>
-              <p className="value">{new Date(ticket.resolved_at).toLocaleString()}</p>
+              <p className="value mono">{new Date(ticket.resolved_at).toLocaleString()}</p>
             </div>
           )}
 
@@ -174,25 +202,57 @@ export default function TicketDetailPage() {
           </div>
 
           <h2>Comments</h2>
-          <div className="comments">
-            {ticket.comments.map((comment) => (
-              <div className="card comment" key={comment.id}>
-                <strong>{comment.author_name}</strong>
-                <span className="comment-date">{new Date(comment.created_at).toLocaleString()}</span>
-                <p>{comment.body}</p>
-              </div>
-            ))}
-            {ticket.comments.length === 0 && <p>No comments yet.</p>}
-          </div>
+          {ticket.comments.length > 0 ? (
+            <div className="comments">
+              {ticket.comments.map((comment) => (
+                <div className="comment" key={comment.id}>
+                  <span className="avatar">{initials(comment.author_name)}</span>
+                  <div className="comment-body">
+                    <div className="comment-head">
+                      <strong>{comment.author_name}</strong>
+                      <span className="comment-date">{new Date(comment.created_at).toLocaleString()}</span>
+                    </div>
+                    <p>{comment.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="hint-text">No comments yet.</p>
+          )}
 
           <form className="card form" onSubmit={handleAddComment}>
             <label>
               Add a comment
               <textarea value={commentBody} onChange={(e) => setCommentBody(e.target.value)} required />
             </label>
-            <button type="submit" disabled={postingComment}>
-              {postingComment ? 'Posting...' : 'Post Comment'}
-            </button>
+            {cannedResponses.length > 0 && (
+              <label htmlFor="canned-response-picker" className="canned-response-picker">
+                <span>Canned response</span>
+                <select
+                  id="canned-response-picker"
+                  value=""
+                  onChange={(e) => applyCannedResponse(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Insert a saved reply…
+                  </option>
+                  {cannedResponses.map((response) => (
+                    <option key={response.id} value={response.id}>
+                      {response.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="form-actions">
+              <button type="submit" disabled={postingComment}>
+                {postingComment ? 'Posting...' : 'Post Comment'}
+              </button>
+              <button type="button" className="button-subtle" onClick={handleSaveCannedResponse}>
+                Save as canned response
+              </button>
+            </div>
           </form>
 
           {ticket.related_tickets.length > 0 && (
@@ -219,6 +279,23 @@ export default function TicketDetailPage() {
                   </tbody>
                 </table>
               </div>
+            </>
+          )}
+
+          {ticket.activity.length > 0 && (
+            <>
+              <h2>Activity</h2>
+              <ul className="activity-list">
+                {ticket.activity.map((entry) => (
+                  <li key={entry.id}>
+                    <span className="activity-dot" aria-hidden="true" />
+                    <span>
+                      {entry.actor_name && <strong>{entry.actor_name}</strong>} {entry.description}
+                    </span>
+                    <span className="comment-date">{new Date(entry.created_at).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </div>

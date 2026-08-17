@@ -25,6 +25,7 @@ const mockTicket = {
   updated_at: '2024-01-01T00:00:00.000Z',
   resolved_at: null,
   comments: [],
+  activity: [],
   related_tickets: [],
 }
 
@@ -53,6 +54,9 @@ describe('TicketDetailPage', () => {
     api.get.mockImplementation((path) => {
       if (path === '/categories') return Promise.resolve([{ id: 1, name: 'Hardware' }])
       if (path === '/tickets/5') return Promise.resolve(mockTicket)
+      if (path === '/canned-responses') {
+        return Promise.resolve([{ id: 9, title: 'Acknowledgement', body: 'Received, looking into it.' }])
+      }
       return Promise.resolve([])
     })
   })
@@ -74,6 +78,32 @@ describe('TicketDetailPage', () => {
     await user.click(screen.getByRole('button', { name: /post comment/i }))
 
     expect(await screen.findByText('Comment posted')).toBeInTheDocument()
+  })
+
+  it('renders the activity feed', async () => {
+    api.get.mockImplementation((path) => {
+      if (path === '/categories') return Promise.resolve([{ id: 1, name: 'Hardware' }])
+      if (path === '/tickets/5') {
+        return Promise.resolve({
+          ...mockTicket,
+          activity: [{ id: 1, actor_name: 'Agent One', description: 'Status changed to In Progress', created_at: mockTicket.created_at }],
+        })
+      }
+      return Promise.resolve([])
+    })
+    renderPage()
+
+    expect(await screen.findByText(/Status changed to In Progress/)).toBeInTheDocument()
+  })
+
+  it('fills the comment box from a picked canned response', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText(/Printer jam/)
+
+    await user.selectOptions(screen.getByLabelText('Canned response'), '9')
+
+    expect(screen.getByLabelText('Add a comment')).toHaveValue('Received, looking into it.')
   })
 
   it('updates status via the properties panel', async () => {

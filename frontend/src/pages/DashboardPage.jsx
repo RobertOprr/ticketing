@@ -10,6 +10,11 @@ const STATUSES = ['Open', 'In Progress', 'Resolved', 'Escalated']
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 const POLL_INTERVAL_MS = 45000
 const TICK_INTERVAL_MS = 5000
+// Render's free tier can take 30-50s+ to wake a spun-down backend, so a
+// single failed request there isn't a real error — it's a cold start.
+// Retry a few times before giving up.
+const STATS_RETRY_LIMIT = 8
+const STATS_RETRY_DELAY_MS = 5000
 
 function Sparkbars({ data }) {
   const max = Math.max(...data, 1)
@@ -50,18 +55,39 @@ export default function DashboardPage() {
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    function load() {
+    let cancelled = false
+    let hasLoadedOnce = false
+    let retryId
+
+    function attempt(retriesLeft) {
       api
         .get('/stats')
         .then((data) => {
+          if (cancelled) return
+          hasLoadedOnce = true
           setStats(data)
+          setError(null)
           setLastFetchedAt(Date.now())
         })
-        .catch((err) => setError(`Could not load dashboard stats: ${err.message}`))
+        .catch((err) => {
+          if (cancelled) return
+          if (retriesLeft > 0) {
+            retryId = setTimeout(() => attempt(retriesLeft - 1), STATS_RETRY_DELAY_MS)
+            return
+          }
+          // Only surface an error if we have nothing to show yet — a stale
+          // dashboard beats a scary error page when a background poll fails.
+          if (!hasLoadedOnce) setError(`Could not load dashboard stats: ${err.message}`)
+        })
     }
-    load()
-    const pollId = setInterval(load, POLL_INTERVAL_MS)
-    return () => clearInterval(pollId)
+
+    attempt(STATS_RETRY_LIMIT)
+    const pollId = setInterval(() => attempt(STATS_RETRY_LIMIT), POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(pollId)
+      clearTimeout(retryId)
+    }
   }, [])
 
   // Forces a re-render every few seconds so "refreshed Xs ago" stays live
@@ -78,6 +104,7 @@ export default function DashboardPage() {
   const refreshed = refreshedLabel(secondsAgo)
   const worst = stats.needs_attention[0]
   const isBreached = worst && worst.sla_fraction >= 1
+  const hasRecentActivity = stats.tickets_per_hour.some((count) => count > 0)
 
   return (
     <div>
@@ -137,18 +164,30 @@ export default function DashboardPage() {
         <div className="cards">
           <div className="card stat-card">
             <div className="stat-count">
-              {stats.avg_resolution_hours != null ? formatDuration(stats.avg_resolution_hours) : '—'}
+              {stats.avg_resolution_hours != null ? (
+                formatDuration(stats.avg_resolution_hours)
+              ) : (
+                <span className="stat-empty">No resolved tickets yet</span>
+              )}
             </div>
             <div className="stat-label">Avg. resolution time</div>
           </div>
           <div className="card stat-card">
             <div className="stat-count">
-              {stats.sla_achievement_rate != null ? `${stats.sla_achievement_rate}%` : '—'}
+              {stats.sla_achievement_rate != null ? (
+                `${stats.sla_achievement_rate}%`
+              ) : (
+                <span className="stat-empty">No resolved tickets yet</span>
+              )}
             </div>
             <div className="stat-label">SLA achievement rate</div>
           </div>
           <div className="card stat-card stat-card-wide">
-            <Sparkbars data={stats.tickets_per_hour} />
+            {hasRecentActivity ? (
+              <Sparkbars data={stats.tickets_per_hour} />
+            ) : (
+              <span className="stat-empty">Not enough recent activity to chart yet</span>
+            )}
             <div className="stat-label">Tickets created (last 8h)</div>
           </div>
         </div>
@@ -184,7 +223,7 @@ export default function DashboardPage() {
                           <PriorityBadge priority={t.priority} />
                         </td>
                         <td>{t.requester_name}</td>
-                        <td>{formatDuration(t.age_hours)}</td>
+                        <td className="mono">{formatDuration(t.age_hours)}</td>
                         <td>
                           <SlaBar fraction={t.sla_fraction} />
                         </td>

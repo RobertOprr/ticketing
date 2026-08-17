@@ -173,6 +173,8 @@ export default function TicketListPage() {
     return categories.find((c) => c.id === id)?.name ?? id
   }
 
+  const hasActiveFilters = Boolean(status || priority || category || assignedTo || overdue || searchInput)
+
   async function handleExport() {
     try {
       const blob = await api.getBlob('/tickets/export', {
@@ -327,14 +329,25 @@ export default function TicketListPage() {
                       <PriorityBadge priority={ticket.priority} />
                     </td>
                     <td>{categoryName(ticket.category)}</td>
-                    <td className={isOverdue(ticket) ? 'overdue' : ''}>
+                    <td className={`mono ${isOverdue(ticket) ? 'overdue' : ''}`}>
                       {formatDuration(hoursOpen(ticket))}
                     </td>
                   </tr>
                 ))}
                 {tickets.length === 0 && (
                   <tr>
-                    <td colSpan={5}>No tickets match these filters.</td>
+                    <td colSpan={5} className="table-empty">
+                      {hasActiveFilters ? (
+                        <>
+                          No tickets match these filters.{' '}
+                          <button type="button" className="link-button" onClick={clearFilters}>
+                            Clear filters
+                          </button>
+                        </>
+                      ) : (
+                        'No tickets yet.'
+                      )}
+                    </td>
                   </tr>
                 )}
               </tbody>

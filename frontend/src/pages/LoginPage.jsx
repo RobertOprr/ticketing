@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 export default function LoginPage() {
@@ -46,6 +46,9 @@ export default function LoginPage() {
         <button type="submit" disabled={loading}>
           {loading ? 'Logging in...' : 'Log in'}
         </button>
+        <p className="hint-text">
+          Looking for a ticket status instead? <Link to="/portal">Check here</Link>
+        </p>
       </form>
     </div>
   )
