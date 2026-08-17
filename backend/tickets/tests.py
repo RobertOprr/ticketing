@@ -6,7 +6,7 @@ from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.throttling import ScopedRateThrottle
 
-from tickets.models import Category, Ticket, User
+from tickets.models import CannedResponse, Category, Ticket, User
 
 
 def create_ticket(auth_client, category, **overrides):
@@ -54,6 +54,29 @@ def test_create_and_list_ticket(auth_client, category):
 
 
 @pytest.mark.django_db
+def test_ticket_creation_round_robins_across_least_loaded_agents(auth_client, category, agent):
+    agent_two = User.objects.create_user(
+        username='agent2', password='pass12345', email='agent2@example.com', name='Agent Two'
+    )
+    first = create_ticket(auth_client, category, title='First')
+    second = create_ticket(auth_client, category, title='Second')
+
+    assert {first['assigned_to'], second['assigned_to']} == {agent.id, agent_two.id}
+
+
+@pytest.mark.django_db
+def test_explicit_assignment_on_create_is_not_overridden_by_round_robin(auth_client, category, l2_agent):
+    created = create_ticket(auth_client, category, assigned_to=l2_agent.id)
+    assert created['assigned_to'] == l2_agent.id
+
+
+@pytest.mark.django_db
+def test_ticket_creation_stays_unassigned_when_no_agents_exist(l2_client, category):
+    created = create_ticket(l2_client, category)
+    assert created['assigned_to'] is None
+
+
+@pytest.mark.django_db
 def test_ticket_filters(auth_client, category):
     other_category = Category.objects.create(name='Software')
     create_ticket(auth_client, category, title='Broken monitor', priority='Low')
@@ -72,8 +95,10 @@ def test_ticket_filters(auth_client, category):
 @pytest.mark.django_db
 def test_ticket_list_filters_by_unassigned(auth_client, category, agent):
     assigned = create_ticket(auth_client, category, title='Assigned one')
-    create_ticket(auth_client, category, title='Unassigned one')
+    unassigned = create_ticket(auth_client, category, title='Unassigned one')
     auth_client.patch(f'/api/tickets/{assigned["id"]}', {'assigned_to': agent.id}, format='json')
+    # Round robin auto-assigns on create — explicitly unassign to test the filter itself.
+    auth_client.patch(f'/api/tickets/{unassigned["id"]}', {'assigned_to': None}, format='json')
 
     res = auth_client.get('/api/tickets', {'assigned_to': 'none'})
     assert [t['title'] for t in res.data['results']] == ['Unassigned one']
@@ -133,6 +158,31 @@ def test_escalate_sets_status_escalated(auth_client, category):
     res = auth_client.post(f'/api/tickets/{created["id"]}/escalate')
     assert res.status_code == 200
     assert res.data['status'] == 'Escalated'
+
+
+@pytest.mark.django_db
+def test_ticket_detail_includes_creation_activity(auth_client, category):
+    created = create_ticket(auth_client, category)
+    res = auth_client.get(f'/api/tickets/{created["id"]}')
+    assert 'Ticket created' in [a['description'] for a in res.data['activity']]
+
+
+@pytest.mark.django_db
+def test_status_change_is_logged_as_activity(auth_client, category):
+    created = create_ticket(auth_client, category)
+    auth_client.patch(f'/api/tickets/{created["id"]}', {'status': 'In Progress'}, format='json')
+
+    res = auth_client.get(f'/api/tickets/{created["id"]}')
+    assert 'Status changed to In Progress' in [a['description'] for a in res.data['activity']]
+
+
+@pytest.mark.django_db
+def test_escalation_is_logged_as_activity(auth_client, category):
+    created = create_ticket(auth_client, category)
+    auth_client.post(f'/api/tickets/{created["id"]}/escalate')
+
+    res = auth_client.get(f'/api/tickets/{created["id"]}')
+    assert 'Escalated to L2' in [a['description'] for a in res.data['activity']]
 
 
 @pytest.mark.django_db
@@ -256,6 +306,54 @@ def test_ticket_export_neutralizes_formula_injection(auth_client, category):
 
 
 @pytest.mark.django_db
+def test_canned_responses_requires_auth(api_client):
+    assert api_client.get('/api/canned-responses').status_code == 401
+
+
+@pytest.mark.django_db
+def test_canned_responses_list_ordered_by_title(auth_client):
+    CannedResponse.objects.create(title='Resolved', body='All set.')
+    CannedResponse.objects.create(title='Acknowledgement', body='Received.')
+
+    res = auth_client.get('/api/canned-responses')
+    assert res.status_code == 200
+    assert [r['title'] for r in res.data] == ['Acknowledgement', 'Resolved']
+
+
+@pytest.mark.django_db
+def test_canned_responses_create(auth_client):
+    res = auth_client.post(
+        '/api/canned-responses', {'title': 'Escalated to L2', 'body': "We've escalated this."}, format='json'
+    )
+    assert res.status_code == 201
+    assert CannedResponse.objects.filter(title='Escalated to L2').exists()
+
+
+@pytest.mark.django_db
+def test_portal_lookup_requires_no_auth_but_rejects_missing_params(api_client):
+    res = api_client.get('/api/portal/lookup')
+    assert res.status_code == 400  # missing params, not 401 — confirms no auth is required
+
+
+@pytest.mark.django_db
+def test_portal_lookup_returns_ticket_for_matching_email(auth_client, api_client, category):
+    created = create_ticket(auth_client, category, title='Printer down')
+
+    res = api_client.get('/api/portal/lookup', {'id': created['id'], 'email': 'jane@example.com'})
+    assert res.status_code == 200
+    assert res.data['title'] == 'Printer down'
+    assert 'assigned_to' not in res.data
+
+
+@pytest.mark.django_db
+def test_portal_lookup_rejects_mismatched_email(auth_client, api_client, category):
+    created = create_ticket(auth_client, category)
+
+    res = api_client.get('/api/portal/lookup', {'id': created['id'], 'email': 'someone-else@example.com'})
+    assert res.status_code == 404
+
+
+@pytest.mark.django_db
 def test_login_is_rate_limited(api_client, agent, monkeypatch):
     # SimpleRateThrottle.THROTTLE_RATES is a class attribute snapshotted from
     # api_settings at import time — override_settings doesn't reach it, so
@@ -361,9 +459,11 @@ def test_stats_excludes_resolved_from_needs_attention(auth_client, category):
 def test_stats_includes_agent_load(auth_client, l2_client, category, agent, l2_agent):
     agent_ticket = create_ticket(auth_client, category)
     l2_ticket = create_ticket(auth_client, category)
-    create_ticket(auth_client, category)  # left unassigned
+    unassigned_ticket = create_ticket(auth_client, category)
     auth_client.patch(f'/api/tickets/{agent_ticket["id"]}', {'assigned_to': agent.id}, format='json')
     l2_client.patch(f'/api/tickets/{l2_ticket["id"]}', {'assigned_to': l2_agent.id}, format='json')
+    # Round robin auto-assigns on create — explicitly unassign to test the unassigned count itself.
+    auth_client.patch(f'/api/tickets/{unassigned_ticket["id"]}', {'assigned_to': None}, format='json')
 
     res = auth_client.get('/api/stats')
     by_agent = {row['agent_id']: row['open_count'] for row in res.data['agent_load']}
@@ -382,7 +482,16 @@ def test_seed_production_is_a_noop_without_superuser_env_vars(monkeypatch):
     assert set(Category.objects.values_list('name', flat=True)) == {
         'Hardware', 'Software', 'Network', 'Account'
     }
+    assert CannedResponse.objects.count() == 4
     assert not User.objects.exists()
+
+
+@pytest.mark.django_db
+def test_seed_production_canned_responses_are_idempotent():
+    call_command('seed_production')
+    call_command('seed_production')
+
+    assert CannedResponse.objects.count() == 4
 
 
 @pytest.mark.django_db

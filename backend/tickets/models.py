@@ -25,6 +25,18 @@ class Category(models.Model):
         return self.name
 
 
+class CannedResponse(models.Model):
+    title = models.CharField(max_length=100)
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['title']
+
+    def __str__(self):
+        return self.title
+
+
 class Ticket(models.Model):
     class Priority(models.TextChoices):
         LOW = 'Low', 'Low'
@@ -67,3 +79,20 @@ class Comment(models.Model):
 
     def __str__(self):
         return f'Comment #{self.id} on ticket #{self.ticket_id}'
+
+
+class TicketActivity(models.Model):
+    """Auto-recorded audit trail entry — status/priority/assignment changes
+    and escalations, distinct from Comment which is agent-authored text."""
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='activity')
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='ticket_activity')
+    description = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name_plural = 'Ticket activity'
+
+    def __str__(self):
+        return self.description

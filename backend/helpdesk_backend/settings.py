@@ -107,6 +107,7 @@ REST_FRAMEWORK = {
         'user': '1000/day',
         'anon': '100/day',
         'login': '10/minute',
+        'portal_lookup': '20/minute',
     },
 }
 

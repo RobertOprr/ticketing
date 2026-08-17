@@ -1,12 +1,19 @@
 from rest_framework import serializers
 
-from .models import Category, Comment, Ticket
+from .models import CannedResponse, Category, Comment, Ticket, TicketActivity
 
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name']
+
+
+class CannedResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CannedResponse
+        fields = ['id', 'title', 'body', 'created_at']
+        read_only_fields = ['created_at']
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -16,6 +23,14 @@ class CommentSerializer(serializers.ModelSerializer):
         model = Comment
         fields = ['id', 'ticket', 'author', 'author_name', 'body', 'created_at']
         read_only_fields = ['ticket', 'author', 'created_at']
+
+
+class TicketActivitySerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source='actor.name', default=None, read_only=True)
+
+    class Meta:
+        model = TicketActivity
+        fields = ['id', 'actor_name', 'description', 'created_at']
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -37,10 +52,11 @@ class TicketDetailSerializer(TicketSerializer):
     printer tickets) without searching for it manually."""
 
     comments = CommentSerializer(many=True, read_only=True)
+    activity = TicketActivitySerializer(many=True, read_only=True)
     related_tickets = serializers.SerializerMethodField()
 
     class Meta(TicketSerializer.Meta):
-        fields = TicketSerializer.Meta.fields + ['comments', 'related_tickets']
+        fields = TicketSerializer.Meta.fields + ['comments', 'activity', 'related_tickets']
 
     def get_related_tickets(self, ticket):
         related = (
@@ -49,6 +65,22 @@ class TicketDetailSerializer(TicketSerializer):
             .order_by('-created_at')[:5]
         )
         return TicketSerializer(related, many=True).data
+
+
+class PortalTicketSerializer(serializers.ModelSerializer):
+    """Read-only, no-login view of a ticket for the requester — omits
+    assigned_to (which agent is internal, not the customer's business) and
+    any other agent-facing fields."""
+
+    comments = CommentSerializer(many=True, read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+
+    class Meta:
+        model = Ticket
+        fields = [
+            'id', 'title', 'description', 'status', 'priority', 'category_name',
+            'created_at', 'updated_at', 'resolved_at', 'comments',
+        ]
 
 
 # Response-shape-only serializers for plain APIViews that don't map to a

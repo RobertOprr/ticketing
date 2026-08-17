@@ -15,11 +15,13 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from .models import Category, Ticket, User
+from .models import CannedResponse, Category, Ticket, TicketActivity, User
 from .serializers import (
+    CannedResponseSerializer,
     CategorySerializer,
     CommentSerializer,
     LoginResponseSerializer,
+    PortalTicketSerializer,
     StatsSerializer,
     TicketDetailSerializer,
     TicketSerializer,
@@ -51,6 +53,11 @@ class LoginView(APIView):
 class CategoryListView(generics.ListAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+
+
+class CannedResponseListCreateView(generics.ListCreateAPIView):
+    queryset = CannedResponse.objects.all()
+    serializer_class = CannedResponseSerializer
 
 
 # Priority is stored as text (Low/Medium/High/Urgent), so a plain string
@@ -144,6 +151,23 @@ def filter_tickets(params):
     return qs
 
 
+def log_activity(ticket, actor, description):
+    TicketActivity.objects.create(ticket=ticket, actor=actor, description=description)
+
+
+def pick_round_robin_agent():
+    """The agent (role=agent, not L2 — L2 is reserved for escalations) with
+    the fewest currently-open tickets. Ties broken by id for determinism."""
+    return (
+        User.objects.filter(role=User.Role.AGENT)
+        .annotate(
+            open_count=Count('assigned_tickets', filter=~Q(assigned_tickets__status=Ticket.Status.RESOLVED))
+        )
+        .order_by('open_count', 'id')
+        .first()
+    )
+
+
 class TicketListCreateView(generics.ListCreateAPIView):
     serializer_class = TicketSerializer
     pagination_class = TicketPagination
@@ -157,6 +181,15 @@ class TicketListCreateView(generics.ListCreateAPIView):
         if annotations:
             qs = qs.annotate(**annotations)
         return qs.order_by(order_field)
+
+    def perform_create(self, serializer):
+        auto_assigned = serializer.validated_data.get('assigned_to') is None
+        agent = pick_round_robin_agent() if auto_assigned else None
+        ticket = serializer.save(assigned_to=agent) if agent else serializer.save()
+
+        log_activity(ticket, self.request.user, 'Ticket created')
+        if agent:
+            log_activity(ticket, self.request.user, f'Auto-assigned to {agent.name} (round robin)')
 
 
 def _csv_safe(value):
@@ -216,7 +249,7 @@ class CanChangeEscalatedStatus(BasePermission):
 
 
 class TicketDetailView(generics.RetrieveUpdateAPIView):
-    queryset = Ticket.objects.select_related('category', 'assigned_to').prefetch_related('comments')
+    queryset = Ticket.objects.select_related('category', 'assigned_to').prefetch_related('comments', 'activity')
     permission_classes = [IsAuthenticated, CanChangeEscalatedStatus]
 
     def get_serializer_class(self):
@@ -226,6 +259,10 @@ class TicketDetailView(generics.RetrieveUpdateAPIView):
         # resolved_at tracks the moment a ticket becomes Resolved, and clears
         # if it's reopened — mirrors the audit trail an interviewer would expect.
         was_resolved = serializer.instance.status == Ticket.Status.RESOLVED
+        old_status = serializer.instance.status
+        old_priority = serializer.instance.priority
+        old_assigned_id = serializer.instance.assigned_to_id
+
         ticket = serializer.save()
         now_resolved = ticket.status == Ticket.Status.RESOLVED
 
@@ -235,6 +272,14 @@ class TicketDetailView(generics.RetrieveUpdateAPIView):
         elif was_resolved and not now_resolved:
             ticket.resolved_at = None
             ticket.save(update_fields=['resolved_at'])
+
+        if ticket.status != old_status:
+            log_activity(ticket, self.request.user, f'Status changed to {ticket.status}')
+        if ticket.priority != old_priority:
+            log_activity(ticket, self.request.user, f'Priority changed to {ticket.priority}')
+        if ticket.assigned_to_id != old_assigned_id:
+            name = ticket.assigned_to.name if ticket.assigned_to_id else 'Unassigned'
+            log_activity(ticket, self.request.user, f'Assigned to {name}')
 
 
 class CommentCreateView(generics.CreateAPIView):
@@ -251,6 +296,7 @@ class EscalateTicketView(APIView):
         ticket = get_object_or_404(Ticket, pk=pk)
         ticket.status = Ticket.Status.ESCALATED
         ticket.save(update_fields=['status', 'updated_at'])
+        log_activity(ticket, request.user, 'Escalated to L2')
         return Response(TicketSerializer(ticket).data)
 
 
@@ -312,6 +358,34 @@ def tickets_per_hour(hours=8):
         ).count()
         for i in range(hours - 1, -1, -1)
     ]
+
+
+class PortalTicketLookupView(APIView):
+    """No-login ticket status lookup for the requester — must know both the
+    ticket id and the requester email on file, so this doesn't become an
+    open enumeration endpoint. Throttled for the same reason login is."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'portal_lookup'
+
+    @extend_schema(responses=PortalTicketSerializer)
+    def get(self, request):
+        ticket_id = request.query_params.get('id')
+        email = request.query_params.get('email')
+        if not ticket_id or not email:
+            return Response({'detail': 'id and email are both required.'}, status=400)
+
+        ticket = (
+            Ticket.objects.filter(id=ticket_id, requester_email__iexact=email)
+            .select_related('category')
+            .prefetch_related('comments')
+            .first()
+        )
+        if not ticket:
+            return Response({'detail': 'No matching ticket found.'}, status=404)
+        return Response(PortalTicketSerializer(ticket).data)
 
 
 class StatsView(APIView):
