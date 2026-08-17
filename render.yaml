@@ -32,7 +32,7 @@ services:
       - key: DJANGO_ALLOWED_HOSTS
         value: helpdesk-backend.onrender.com
       - key: CORS_ALLOWED_ORIGINS
-        value: https://helpdesk-frontend.onrender.com
+        value: https://helpdesk-frontend-idzb.onrender.com
       - key: DB_NAME
         sync: false
       - key: DB_USER
