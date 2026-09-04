@@ -2,8 +2,11 @@
 
 A full-stack IT help desk ticketing system: create tickets, prioritize and assign them, track status through a workflow (Open → In Progress → Resolved, or Escalated to L2), comment on them, and see live counts on a dashboard with an SLA/time-open indicator.
 
-![Dashboard screenshot placeholder](docs/screenshot-dashboard.png)
+![Dashboard](docs/screenshot-dashboard.png)
 
+![Ticket list](docs/screenshot-tickets.png)
+
+![Ticket detail](docs/screenshot-detail.png)
 
 ## Features
 
