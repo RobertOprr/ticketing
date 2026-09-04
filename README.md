@@ -2,10 +2,8 @@
 
 A full-stack IT help desk ticketing system: create tickets, prioritize and assign them, track status through a workflow (Open → In Progress → Resolved, or Escalated to L2), comment on them, and see live counts on a dashboard with an SLA/time-open indicator.
 
-Personal portfolio project — see the [Honesty note](#honesty-note) below.
-
 ![Dashboard screenshot placeholder](docs/screenshot-dashboard.png)
-> Screenshots not yet added — run the app locally (see below) and drop a few PNGs in `docs/` to replace this.
+
 
 ## Features
 
@@ -115,14 +113,3 @@ Locally, none of this matters — `DEBUG`, `SECRET_KEY`, and the DB connection a
 | GET | `/api/stats` | Dashboard analytics — counts, SLA breaches, agent load, resolution metrics |
 
 All endpoints except login require `Authorization: Token <token>`. Full interactive schema at `/api/docs`.
-
-## CV line
-
-**Help Desk Ticketing App** | Python, Django, DRF, React, MySQL — Personal Project
-- Built a full-stack ticketing system with priority levels, a 4-stage status workflow, assignment, and escalation to L2, backed by 8 REST endpoints and 49 automated tests (28 backend / 21 frontend)
-- Built an analytics dashboard computing SLA breach detection, resolution-time averages, and per-agent load across 4 priority tiers
-- Added CSV export with sanitization against spreadsheet formula injection, and rate-limited authentication against brute-force login attempts
-
-## Honesty note
-
-This project was built with AI assistance. Every part of it — models, endpoints, auth flow, and screens — was read and understood afterward, so it can be explained and defended in an interview. Labeled here, correctly, as a **Personal Project**: it demonstrates understanding of ticketing *workflows*, not professional experience with a platform like ServiceNow or Jira.
