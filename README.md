@@ -13,7 +13,7 @@ A full-stack IT help desk ticketing system: create tickets, prioritize and assig
 - Change status/priority, assign to self, escalate to L2
 - Export the current filtered ticket list to CSV (sanitized against spreadsheet formula injection)
 - Dashboard with live counts by status/priority, SLA breach alerts, needs-attention queue ranked by SLA urgency, per-agent open-ticket load, and tickets-resolved-by-agent
-- SLA indicator — tickets are flagged red once they exceed their priority's time-open threshold
+- SLA indicator : tickets are flagged red once they exceed their priority's time-open threshold
 - Auto-generated OpenAPI schema + Swagger UI (`/api/docs`)
 
 ## Tech stack
@@ -75,7 +75,7 @@ Log in at `http://localhost:5173/login` with the superuser you created.
 ## Running tests
 
 ```bash
-# Backend — runs against in-memory SQLite, no Docker/DB needed
+# Backend : runs against in-memory SQLite, no Docker/DB needed
 cd backend
 pip install -r requirements-dev.txt
 pytest
@@ -87,22 +87,22 @@ npm run test
 
 ## Deployment
 
-Deployed via the included `render.yaml` [Blueprint](https://render.com/docs/blueprint-spec) — two Render services, backend (Python) and frontend (static site).
+Deployed via the included `render.yaml` [Blueprint](https://render.com/docs/blueprint-spec) : two Render services, backend (Python) and frontend (static site).
 
-1. Provision a MySQL database somewhere Render can reach (Render doesn't offer managed MySQL — Aiven, Railway, and Clever Cloud all have small MySQL plans). Note the host/port/db/user/password.
+1. Provision a MySQL database somewhere Render can reach (Render doesn't offer managed MySQL : Aiven, Railway, and Clever Cloud all have small MySQL plans). Note the host/port/db/user/password.
 2. In the Render dashboard: **New → Blueprint**, point it at this repo.
-3. After the first deploy, set `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` on the backend service (left blank in the blueprint on purpose — Render prompts for these on blueprint creation).
-4. Check the actual URLs Render assigned to both services — if they differ from `helpdesk-backend.onrender.com` / `helpdesk-frontend.onrender.com` (Render appends a suffix if the name's taken), update `DJANGO_ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` on the backend and `VITE_API_BASE` on the frontend to match, then redeploy.
-5. Set `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_NAME` on the backend service and redeploy — the build command runs `manage.py seed_production`, which creates that superuser and the four spec categories. It's idempotent (safe to leave in the build command permanently; won't recreate the user or error on later deploys). Render's free tier has no shell access, which is why this runs at build time instead of interactively.
+3. After the first deploy, set `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` on the backend service (left blank in the blueprint on purpose : Render prompts for these on blueprint creation).
+4. Check the actual URLs Render assigned to both services : if they differ from `helpdesk-backend.onrender.com` / `helpdesk-frontend.onrender.com` (Render appends a suffix if the name's taken), update `DJANGO_ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` on the backend and `VITE_API_BASE` on the frontend to match, then redeploy.
+5. Set `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD` / `DJANGO_SUPERUSER_NAME` on the backend service and redeploy : the build command runs `manage.py seed_production`, which creates that superuser and the four spec categories. It's idempotent (safe to leave in the build command permanently; won't recreate the user or error on later deploys). Render's free tier has no shell access, which is why this runs at build time instead of interactively.
 
-Locally, none of this matters — `DEBUG`, `SECRET_KEY`, and the DB connection all fall back to the same values `docker compose` already uses.
+Locally, none of this matters : `DEBUG`, `SECRET_KEY`, and the DB connection all fall back to the same values `docker compose` already uses.
 
 ## API
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/auth/login` | Agent login, returns token + user info |
-| GET | `/api/tickets` | List tickets — filters: `status`, `priority`, `category`, `assigned_to`, `search` |
+| GET | `/api/tickets` | List tickets : filters: `status`, `priority`, `category`, `assigned_to`, `search` |
 | POST | `/api/tickets` | Create a ticket |
 | GET | `/api/tickets/export` | CSV export of the current filtered list |
 | GET | `/api/tickets/{id}` | Ticket detail, including comments |
@@ -110,6 +110,6 @@ Locally, none of this matters — `DEBUG`, `SECRET_KEY`, and the DB connection a
 | POST | `/api/tickets/{id}/escalate` | Escalate to L2 |
 | POST | `/api/tickets/{id}/comments` | Add a comment |
 | GET | `/api/categories` | List categories |
-| GET | `/api/stats` | Dashboard analytics — counts, SLA breaches, agent load, resolution metrics |
+| GET | `/api/stats` | Dashboard analytics : counts, SLA breaches, agent load, resolution metrics |
 
 All endpoints except login require `Authorization: Token <token>`. Full interactive schema at `/api/docs`.
